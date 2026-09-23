@@ -118,6 +118,65 @@ The frontend will be available at `http://localhost:5173`
 | PUT | `/api/articles/:id` | Update article | Yes |
 | DELETE | `/api/articles/:id` | Delete article | Yes |
 | GET | `/api/tags` | Get all unique tags | No |
+| GET | `/api/health` | Readiness status (port, storage, init, CORS) | No |
+| GET | `/api/health/ping` | Lightweight liveness probe | No |
+
+## Health Checks
+
+After startup the server runs a readiness self-check and logs one line per
+check. The same checks are exposed through a safe entry point,
+`GET /api/health`, and a CLI poller, `npm run healthcheck`.
+
+### Unified determination rules
+
+- Four checks run on every request: **port** (accepting connections),
+  **storage** (data directory/database writable and readable),
+  **init** (`articles` table exists) and **cors** (`Access-Control-Allow-Origin`
+  header present).
+- The service is ready (`"status": "ok"`, HTTP 200) only when **all** checks
+  pass; any failure yields `"status": "error"` (HTTP 503).
+- Each check is bounded by a 2s timeout (`CHECK_TIMEOUT`); the whole run is
+  bounded by a 5s waiting limit (`WAIT_LIMIT_EXCEEDED`).
+- The endpoint is read-only and idempotent. It never reads or reflects
+  request headers, so repeated checks cannot leak tokens, and responses are
+  sent with `Cache-Control: no-store`.
+
+Example failure response (HTTP 503):
+
+```json
+{
+  "status": "error",
+  "ok": false,
+  "checks": [
+    { "name": "storage", "ok": false, "failure": "STORAGE_NOT_WRITABLE",
+      "detail": "...", "retry": "Fix permissions/ownership on backend/data, then retry." }
+  ],
+  "retry": "Service is not ready. Fix the failed checks above, then retry GET /api/health ..."
+}
+```
+
+### Failure conditions and how to retry
+
+| Failure code | Condition | How to retry |
+|--------------|-----------|--------------|
+| `PORT_CONFLICT` | Port already in use at startup (server exits 1) | Free the port (`lsof -i :3001`) or set another `PORT` env, then restart |
+| `PORT_UNREACHABLE` | Server not accepting connections | Confirm the process is running, then retry the check |
+| `STORAGE_NOT_WRITABLE` | Data directory or DB file not writable | Fix permissions/ownership on `backend/data`, then retry |
+| `INIT_INCOMPLETE` | `articles` table missing | Run `npm run seed` or restart the server, then retry |
+| `CORS_MISCONFIGURED` | CORS header missing | Ensure the `cors` middleware is mounted before routes, then retry |
+| `CHECK_TIMEOUT` | A check exceeded its 2s limit | Retry; if it persists, inspect database and system load |
+| `WAIT_LIMIT_EXCEEDED` | Checks exceeded the waiting limit | Retry later or raise the limit |
+
+### CLI poller
+
+```bash
+cd backend
+npm run healthcheck                 # poll until ready (10 attempts, 1s apart)
+node scripts/healthcheck.js --retries 5 --interval 2000 --port 3001
+```
+
+Exits `0` once the service is ready. If the waiting limit is exceeded it
+prints the failed conditions with their retry instructions and exits `1`.
 
 ## Admin Credentials
 

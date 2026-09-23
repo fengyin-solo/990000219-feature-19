@@ -34,3 +34,4 @@ function initDb() {
 
 module.exports = initDb;
 module.exports.getDb = getDb;
+module.exports.DB_PATH = DB_PATH;
