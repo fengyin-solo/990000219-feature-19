@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "seed": "node db/seed.js"
+    "seed": "node db/seed.js",
+    "healthcheck": "node scripts/healthcheck.js --ready",
+    "healthcheck:ready": "node scripts/healthcheck.js --ready",
+    "healthcheck:live": "node scripts/healthcheck.js --live"
   },
   "dependencies": {
     "better-sqlite3": "^11.7.0",
